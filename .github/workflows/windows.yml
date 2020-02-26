@@ -1,0 +1,76 @@
+name: Windows
+
+on: [push]
+
+jobs:
+
+  build-windows:
+
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest]
+    
+    steps:
+    - uses: actions/checkout@v1
+    - name: setup
+      env: 
+        repo: open-ephys-gui
+        package: "open-ephys-lib"
+      run: |
+        cd ../..
+        git clone https://github.com/open-ephys/plugin-GUI.git
+        cd plugin-GUI/Build
+        cmake -G "Visual Studio 16 2019" -A x64 .. 
+        mkdir Release && cd Release
+        lib_version=$(curl -s -X GET https://api.bintray.com/packages/open-ephys-gui/Libraries/open-ephys-lib-for-windows/versions/_latest | jq '.name')
+        lib_version="${lib_version:1:${#lib_version}-2}"
+        curl -L https://dl.bintray.com/open-ephys-gui/Libraries/open-ephys-lib-for-win-${lib_version}.zip --output open-ephys-lib-for-win-${lib_version}.zip 
+        unzip open-ephys-lib-for-win-${lib_version}.zip
+      shell: bash
+    - name: configure
+      run: |
+        cd Build
+        cmake -G "Visual Studio 16 2019" -A x64 .. 
+      shell: bash
+    - name: Setup MSBuild.exe
+      uses: warrenbuckley/Setup-MSBuild@v1
+    - name: build
+      run: |
+        msbuild Build/INSTALL.vcxproj -p:Configuration=Release -p:Platform=x64
+      shell: cmd
+# TODO: Perform some basic testing before publishing...
+#    - name: test
+#      run: cd build && ctest
+    - name: deploy
+      env:
+        bintrayUser: ${{ secrets.bintrayUsername }}
+        bintrayApiKey: ${{ secrets.bintrayApiKey }}
+        build_dir: "Build/Release"
+        filename: ${{ github.event.repository.name }}.dll
+        repo: ${{ github.event.repository.name }}
+        package: ${{ github.event.repository.name }}-for-win
+      run: |
+        user_info="$bintrayUser:$bintrayApiKey"
+        cp -v Resources/*.dll $build_dir
+        cd $build_dir
+        gui_version=$(curl -s -X GET https://api.bintray.com/packages/open-ephys-gui/Libraries/open-ephys-lib-for-windows/versions/_latest | jq '.name')
+        gui_version="${gui_version:1:${#gui_version}-2}"
+        old_plugin_version=$(curl -s -X GET https://api.bintray.com/packages/$bintrayUser/$repo/$package/versions/_latest | jq '.name')
+        old_plugin_version="${old_plugin_version:1:${#old_plugin_version}-2}"
+        if [ "$old_plugin_version" = "ul" ]; then
+          new_plugin_ver=$gui_version.0
+        else
+          last_gui_version=$(echo ${old_plugin_version%.*})
+          last_version=$(echo "${old_plugin_version##*.}")
+          if [ "$last_gui_version" = "$gui_version" ]; then
+            new_plugin_ver=$gui_version.$((last_version+1))
+          else
+            new_plugin_ver=$gui_version.0
+          fi
+        fi
+        zipfile=${package}-${new_plugin_ver}.zip
+        powershell Compress-Archive -Path "*.dll" ${zipfile}
+        curl -T $zipfile --user $user_info https://api.bintray.com/content/$bintrayUser/$repo/$package/$new_plugin_ver/$zipfile
+        curl -X POST --user $user_info https://api.bintray.com/content/$bintrayUser/$repo/$package/$new_plugin_ver/publish
+      shell: bash

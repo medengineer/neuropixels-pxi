@@ -1,6 +1,7 @@
 name: Windows
 
-on: [push]
+on: 
+  push:
 
 jobs:
 
@@ -12,6 +13,8 @@ jobs:
         os: [windows-latest]
     
     steps:
+    - uses: olegtarasov/get-tag@v1
+      id: tagName
     - uses: actions/checkout@v1
     - name: setup
       env: 
@@ -49,28 +52,25 @@ jobs:
         build_dir: "Build/Release"
         filename: ${{ github.event.repository.name }}.dll
         repo: ${{ github.event.repository.name }}
-        package: ${{ github.event.repository.name }}-for-win
+        package: ${{ github.event.repository.name }}_windows
       run: |
-        user_info="$bintrayUser:$bintrayApiKey"
-        cp -v Resources/*.dll $build_dir
-        cd $build_dir
-        gui_version=$(curl -s -X GET https://api.bintray.com/packages/open-ephys-gui/Libraries/open-ephys-lib-for-windows/versions/_latest | jq '.name')
-        gui_version="${gui_version:1:${#gui_version}-2}"
-        old_plugin_version=$(curl -s -X GET https://api.bintray.com/packages/$bintrayUser/$repo/$package/versions/_latest | jq '.name')
-        old_plugin_version="${old_plugin_version:1:${#old_plugin_version}-2}"
-        if [ "$old_plugin_version" = "ul" ]; then
-          new_plugin_ver=$gui_version.0
+        tag=$(git describe --tags $(git rev-list --tags --max-count=1))
+        plugin_api=$(grep -rnw ../../plugin-GUI/Source -e '#define PLUGIN_API_VER' | grep -Eo "[0-9]*" | tail -1)
+        new_plugin_ver=$tag-API$plugin_api
+        out_dir=$build_dir/${package}_${new_plugin_ver}
+        mkdir $out_dir
+        mkdir $out_dir/plugins
+        cp -v $build_dir/*.dll $out_dir/plugins
+        if [ -d "Resources" ]
+        then
+          mkdir "$out_dir/shared"
+          cp -v Resources/*.dll "$out_dir/shared"
         else
-          last_gui_version=$(echo ${old_plugin_version%.*})
-          last_version=$(echo "${old_plugin_version##*.}")
-          if [ "$last_gui_version" = "$gui_version" ]; then
-            new_plugin_ver=$gui_version.$((last_version+1))
-          else
-            new_plugin_ver=$gui_version.0
-          fi
+          echo "No resources to copy"
         fi
-        zipfile=${package}-${new_plugin_ver}.zip
-        powershell Compress-Archive -Path "*.dll" ${zipfile}
+        zipfile=${package}_${new_plugin_ver}.zip
+        powershell Compress-Archive -Path ${out_dir} ${zipfile}
+        user_info="$bintrayUser:$bintrayApiKey"
         curl -T $zipfile --user $user_info https://api.bintray.com/content/$bintrayUser/$repo/$package/$new_plugin_ver/$zipfile
         curl -X POST --user $user_info https://api.bintray.com/content/$bintrayUser/$repo/$package/$new_plugin_ver/publish
       shell: bash

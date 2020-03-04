@@ -592,13 +592,7 @@ int NeuropixThread::getNumDataOutputs(DataChannel::DataChannelTypes type, int su
 /** Returns the number of TTL channels that each subprocessor generates*/
 int NeuropixThread::getNumTTLOutputs(int subProcessorIdx) const 
 {
-	if (subProcessorIdx % 2 == 0)
-	{
-		return 1;
-	}
-	else {
-		return 0;
-	}
+	return 1;
 }
 
 /** Returns the sample rate of the data source.*/

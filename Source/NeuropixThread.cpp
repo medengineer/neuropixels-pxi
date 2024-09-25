@@ -1213,6 +1213,20 @@ void NeuropixThread::updateSettings (OwnedArray<ContinuousChannel>* continuousCh
 
                 continuousChannels->getLast()->addMetadata (descriptor, value);
             }
+            else if (type == ContinuousChannel::Type::ADC && name.contains("SYNC"))
+            {
+                String band = name.contains("AP") ? "ap" : "lfp";
+                MetadataDescriptor descriptor (MetadataDescriptor::MetadataType::UINT16,
+                                               1,
+                                               band + "_sync_channel_index",
+                                               "Sync index for this channel",
+                                               "neuropixels." + band + "_sync_index");
+
+                MetadataValue value (MetadataDescriptor::MetadataType::UINT16, 1);
+                value.setValue ((uint16) ch);
+
+                continuousChannels->getLast()->addMetadata (descriptor, value);
+            }
 
         } // end channel loop
 
